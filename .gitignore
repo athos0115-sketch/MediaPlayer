@@ -1,0 +1,13 @@
+﻿dist/
+dist_v2/
+build/
+*.spec
+web_profile/
+streamers.json
+layouts.json
+*.bak
+*.tmp
+__pycache__/
+*.py[cod]
+.venv/
+venv/
