@@ -111,10 +111,10 @@ CHROME_UA = (
     "Chrome/124.0.0.0 Safari/537.36"
 )
 
-# 3대 플랫폼 로그인 페이지 URL
+# 3대 플랫폼 로그인 페이지 URL (SOOP 통합 도메인 login.sooplive.com 적용)
 LOGIN_URLS = {
     "NAVER": "https://nid.naver.com/nidlogin.login",
-    "SOOP": "https://login.sooplive.co.kr/app/index.php",
+    "SOOP": "https://login.sooplive.com/app/index.php",
     "GOOGLE": "https://accounts.google.com/ServiceLogin?service=youtube",
 }
 
@@ -125,7 +125,9 @@ WS_MAXIMIZEBOX = 0x00010000
 WS_SYSMENU = 0x00080000
 
 # ==============================================================================
-# SOOP 본 방송 비파괴(Non-Destructive) 채팅창 풀스크린 오버레이 스크립트
+# SOOP ?vtype=chat 전용 페이지 여백 제거 및 폴백(Fallback) 클린 스타일 스크립트
+# - ?vtype=chat URL로 접속하면 SOOP이 자체적으로 순수 채팅 UI만 렌더링하므로,
+#   불필요한 스크롤바/여백만 정리하고 다크 테마 배경을 유지합니다.
 # ==============================================================================
 SOOP_CHAT_DOM_MASK_JS = """
 (function() {
@@ -134,139 +136,19 @@ SOOP_CHAT_DOM_MASK_JS = """
     if (location.hostname.includes('login.')) return;
     window.__soopChatMaskInjected = true;
 
-    const CHAT_SELECTORS = [
-        '#chat_area',
-        '#chatting_area',
-        '#chatting',
-        '.chat_area',
-        '.chat_box',
-        '#webplayer_chat',
-        'div[id*="chat_area"]',
-        'div[class*="chat_area"]',
-        'div[class*="chatting_area"]',
-        'aside[class*="chat"]',
-        'section[class*="chat"]'
-    ];
-
-    function expandSoopChatOverlay() {
-        document.querySelectorAll('video, audio').forEach(el => {
-            try {
-                el.muted = true;
-                el.volume = 0;
-            } catch (e) {}
-        });
-
-        document.body.classList.remove('chat_close', 'close_chat', 'full_screen', 'theater_mode', 'mode_extend');
-        const wrap = document.getElementById('webplayer') || document.getElementById('player_wrap');
-        if (wrap) wrap.classList.remove('chat_close', 'close_chat', 'mode_extend');
-
-        const openBtn = document.querySelector(
-            '.btn_chat_open, #btn_chat_open, button[class*="chat_open"], .chat_open'
-        );
-        if (openBtn && openBtn.offsetParent !== null) {
-            try { openBtn.click(); } catch (e) {}
+    const style = document.createElement('style');
+    style.id = '__mp_soop_chat_overlay_css__';
+    style.textContent = `
+        html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            overflow: hidden !important;
+            background: #121216 !important;
         }
-
-        let chatEl = null;
-        for (const sel of CHAT_SELECTORS) {
-            const found = document.querySelector(sel);
-            if (found && found.querySelector('ul,ol,div[class*="chat"],textarea,input')) {
-                chatEl = found;
-                break;
-            }
-        }
-        if (!chatEl) {
-            for (const sel of CHAT_SELECTORS) {
-                const found = document.querySelector(sel);
-                if (found) {
-                    chatEl = found;
-                    break;
-                }
-            }
-        }
-        if (!chatEl) return;
-
-        if (!document.getElementById('__mp_soop_chat_overlay_css__')) {
-            const style = document.createElement('style');
-            style.id = '__mp_soop_chat_overlay_css__';
-            style.textContent = `
-                html, body {
-                    margin: 0 !important;
-                    padding: 0 !important;
-                    width: 100vw !important;
-                    height: 100vh !important;
-                    min-width: 100vw !important;
-                    overflow: hidden !important;
-                    background: #121216 !important;
-                }
-                #header, header, .header, #gnb, .gnb, .sidebar, #sidebar,
-                .broadcast_information, #footer, footer, .player_ctrlBox, .layer_ad {
-                    display: none !important;
-                }
-                #player_area, .player_area, #video_area, #webplayer_area, #html5_player {
-                    position: fixed !important;
-                    top: -9999px !important;
-                    left: -9999px !important;
-                    width: 2px !important;
-                    height: 2px !important;
-                    opacity: 0.01 !important;
-                    pointer-events: none !important;
-                    z-index: -1 !important;
-                }
-            `;
-            (document.head || document.documentElement).appendChild(style);
-        }
-
-        chatEl.style.setProperty('display', 'flex', 'important');
-        chatEl.style.setProperty('flex-direction', 'column', 'important');
-        chatEl.style.setProperty('position', 'fixed', 'important');
-        chatEl.style.setProperty('top', '0px', 'important');
-        chatEl.style.setProperty('left', '0px', 'important');
-        chatEl.style.setProperty('right', '0px', 'important');
-        chatEl.style.setProperty('bottom', '0px', 'important');
-        chatEl.style.setProperty('width', '100vw', 'important');
-        chatEl.style.setProperty('height', '100vh', 'important');
-        chatEl.style.setProperty('max-width', '100vw', 'important');
-        chatEl.style.setProperty('max-height', '100vh', 'important');
-        chatEl.style.setProperty('margin', '0px', 'important');
-        chatEl.style.setProperty('padding', '0px', 'important');
-        chatEl.style.setProperty('z-index', '2147483647', 'important');
-        chatEl.style.setProperty('visibility', 'visible', 'important');
-        chatEl.style.setProperty('opacity', '1', 'important');
-        chatEl.style.setProperty('background-color', '#121216', 'important');
-
-        let p = chatEl.parentElement;
-        while (p && p !== document.body && p !== document.documentElement) {
-            const cs = window.getComputedStyle(p);
-            if (cs.display === 'none') {
-                p.style.setProperty('display', 'block', 'important');
-            }
-            if (cs.transform && cs.transform !== 'none') {
-                p.style.setProperty('transform', 'none', 'important');
-            }
-            if (cs.filter && cs.filter !== 'none') {
-                p.style.setProperty('filter', 'none', 'important');
-            }
-            if (cs.backdropFilter && cs.backdropFilter !== 'none') {
-                p.style.setProperty('backdrop-filter', 'none', 'important');
-            }
-            p.style.setProperty('overflow', 'visible', 'important');
-            p.style.setProperty('visibility', 'visible', 'important');
-            p.style.setProperty('opacity', '1', 'important');
-            p.style.setProperty('z-index', 'auto', 'important');
-            p = p.parentElement;
-        }
-    }
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', expandSoopChatOverlay);
-    } else {
-        expandSoopChatOverlay();
-    }
-
-    const obs = new MutationObserver(expandSoopChatOverlay);
-    obs.observe(document.documentElement, { childList: true, subtree: true });
-    setInterval(expandSoopChatOverlay, 800);
+    `;
+    (document.head || document.documentElement).appendChild(style);
 })();
 """
 
@@ -286,7 +168,7 @@ def get_data_root_dir() -> str:
     """
     base = get_base_dir()
     parent1 = os.path.dirname(base)
-    if os.path.basename(parent1).lower() == "dist":
+    if os.path.basename(parent1).lower() in ("dist", "dist_v2", "dist_new"):
         project_root = os.path.dirname(parent1)
         if os.path.isdir(project_root):
             return project_root
@@ -385,7 +267,6 @@ def resolve_app_icon_path() -> str:
     if not found_path:
         return ""
 
-    # 프로젝트 assets 및 로컬 assets 폴더에 player_icon.ico 자동 생성
     target_dirs = {os.path.dirname(found_path), os.path.join(data_root, "assets")}
     for t_dir in target_dirs:
         ico_target = os.path.join(t_dir, "player_icon.ico")
@@ -496,14 +377,14 @@ def compute_magnetic_snap(moving_rect: QRect, target_rects: list, snap_dist: int
 
 def is_soop_url(url: str) -> bool:
     u = url.lower()
-    return any(k in u for k in ("sooplive.co.kr", "sooplive.com", "afreecatv.com"))
+    return any(k in u for k in ("sooplive.com", "sooplive.co.kr", "afreecatv.com"))
 
 
 def fetch_soop_live_bno(bj_id: str) -> str:
     """SOOP 공식 플레이어 API를 통해 해당 BJ의 현재 진행 중인 실시간 방송번호(BNO)를 조회"""
     api_urls = [
-        f"https://live.sooplive.co.kr/afreeca/player_live_api.php?bjid={bj_id}",
         f"https://live.sooplive.com/afreeca/player_live_api.php?bjid={bj_id}",
+        f"https://live.sooplive.co.kr/afreeca/player_live_api.php?bjid={bj_id}",
     ]
     data_payload = urllib.parse.urlencode({
         "bid": bj_id,
@@ -519,8 +400,8 @@ def fetch_soop_live_bno(bj_id: str) -> str:
                 headers={
                     "User-Agent": CHROME_UA,
                     "Content-Type": "application/x-www-form-urlencoded",
-                    "Referer": f"https://play.sooplive.co.kr/{bj_id}",
-                    "Origin": "https://play.sooplive.co.kr",
+                    "Referer": f"https://play.sooplive.com/{bj_id}",
+                    "Origin": "https://play.sooplive.com",
                 }
             )
             with urllib.request.urlopen(req, timeout=3) as resp:
@@ -533,7 +414,7 @@ def fetch_soop_live_bno(bj_id: str) -> str:
         except Exception:
             pass
 
-    for domain in ("sooplive.co.kr", "sooplive.com"):
+    for domain in ("sooplive.com", "sooplive.co.kr"):
         try:
             req = urllib.request.Request(
                 f"https://play.{domain}/{bj_id}",
@@ -557,6 +438,10 @@ def fetch_soop_live_bno(bj_id: str) -> str:
 
 
 def normalize_stream_url(url: str) -> str:
+    """
+    영상 스트림 추출(Streamlink/yt-dlp)을 위해 최신 실시간 BNO가 반영된
+    통합 도메인(play.sooplive.com) 본 방송 URL을 반환합니다.
+    """
     u = url.strip()
     u_clean = re.sub(r"[?&]vtype=chat", "", u)
 
@@ -569,8 +454,8 @@ def normalize_stream_url(url: str) -> str:
         live_bno = fetch_soop_live_bno(bj_id)
         bno = live_bno if live_bno else m_soop.group(3)
         if bno:
-            return f"https://play.sooplive.co.kr/{bj_id}/{bno}"
-        return f"https://play.sooplive.co.kr/{bj_id}"
+            return f"https://play.sooplive.com/{bj_id}/{bno}"
+        return f"https://play.sooplive.com/{bj_id}"
 
     m_chzzk = re.search(r"https?://chzzk\.naver\.com/(?:live/)?([a-fA-F0-9]{16,})(?:/chat)?", u_clean)
     if m_chzzk:
@@ -580,6 +465,11 @@ def normalize_stream_url(url: str) -> str:
 
 
 def extract_live_chat_url(url: str, already_normalized: bool = False) -> str:
+    """
+    플랫폼별 전용 채팅 URL 반환:
+    - SOOP: 공식 채팅 전용 파라미터(?vtype=chat)가 결합된 play.sooplive.com 주소 반환
+    - CHZZK / Twitch / YouTube: 각 플랫폼 전용 팝아웃 채팅 URL 반환
+    """
     u = url.strip()
 
     m_chzzk = re.search(r"chzzk\.naver\.com/(?:live/)?([a-fA-F0-9]{16,})", u)
@@ -588,7 +478,9 @@ def extract_live_chat_url(url: str, already_normalized: bool = False) -> str:
         return f"https://chzzk.naver.com/live/{cid}/chat"
 
     if is_soop_url(u):
-        return u if already_normalized else normalize_stream_url(u)
+        norm = u if already_normalized else normalize_stream_url(u)
+        norm_clean = re.sub(r"[?&]vtype=chat", "", norm).rstrip("/")
+        return f"{norm_clean}?vtype=chat"
 
     m_twitch = re.search(r"twitch\.tv/([a-zA-Z0-9_]+)", u)
     if m_twitch:
@@ -713,7 +605,7 @@ class AddStreamerDialog(QDialog):
         self.edit_name.setPlaceholderText("예: 스트리머 닉네임 (이름순 자동 정렬)")
 
         self.edit_url = QLineEdit(self)
-        self.edit_url.setPlaceholderText("예: https://chzzk.naver.com/live/... 또는 https://play.sooplive.co.kr/아이디")
+        self.edit_url.setPlaceholderText("예: https://chzzk.naver.com/live/... 또는 https://play.sooplive.com/아이디")
 
         if edit_data:
             idx = 0 if edit_data.get("platform") == "CHZZK" else 1
@@ -1350,17 +1242,17 @@ class StreamlinkResolverThread(QThread):
 
         if HAS_STREAMLINK:
             candidate_urls = [normalized_url]
-            if "sooplive.co.kr" in normalized_url:
-                candidate_urls.append(normalized_url.replace("sooplive.co.kr", "sooplive.com"))
-            elif "sooplive.com" in normalized_url:
+            if "sooplive.com" in normalized_url:
                 candidate_urls.append(normalized_url.replace("sooplive.com", "sooplive.co.kr"))
+            elif "sooplive.co.kr" in normalized_url:
+                candidate_urls.append(normalized_url.replace("sooplive.co.kr", "sooplive.com"))
 
             for try_url in candidate_urls:
                 try:
                     session = streamlink.Streamlink()
                     session.set_option("http-headers", {
                         "User-Agent": CHROME_UA,
-                        "Referer": "https://play.sooplive.co.kr/"
+                        "Referer": "https://play.sooplive.com/"
                     })
                     streams = session.streams(try_url)
                     if streams:
@@ -2393,7 +2285,10 @@ class UnifiedMediaPlayer(QMainWindow):
             btn.setStyleSheet(active_qss if self._active_login_platform == key else inactive_qss)
 
     def _connect_live_chat(self, stream_page_url: str, chat_url: str):
-        target_url = chat_url or (normalize_stream_url(stream_page_url) if stream_page_url else "")
+        """
+        플랫폼별 전용 실시간 채팅 URL(?vtype=chat 등)을 로드합니다.
+        """
+        target_url = chat_url or (extract_live_chat_url(stream_page_url) if stream_page_url else "")
         if not target_url:
             return
 
@@ -2408,9 +2303,9 @@ class UnifiedMediaPlayer(QMainWindow):
             self.chat_web_page.runJavaScript(SOOP_CHAT_DOM_MASK_JS)
 
     def reload_current_chat(self):
-        if self.current_chat_url:
+        if self.current_chat_url or self.current_web_url:
             if is_soop_url(self.current_web_url or self.current_chat_url):
-                self.current_chat_url = normalize_stream_url(self.current_web_url or self.current_chat_url)
+                self.current_chat_url = extract_live_chat_url(self.current_web_url or self.current_chat_url)
             self._connect_live_chat(self.current_web_url, self.current_chat_url)
             self.show_osd("↻ 라이브 채팅창 새로고침 중...", duration=2000)
         else:
@@ -2854,7 +2749,7 @@ class UnifiedMediaPlayer(QMainWindow):
 
         self.url_input = QLineEdit(self)
         self.url_input.setWindowFlags(overlay_flags_focusable)
-        self.url_input.setPlaceholderText("라이브/유튜브 URL 입력 (예: play.sooplive.co.kr/... 또는 chzzk...) 후 Enter")
+        self.url_input.setPlaceholderText("라이브/유튜브 URL 입력 (예: play.sooplive.com/... 또는 chzzk...) 후 Enter")
         self.url_input.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.url_input.setFixedSize(580, 48)
         self.url_input.setStyleSheet(popup_qss)
