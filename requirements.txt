@@ -1,0 +1,5 @@
+PyQt6>=6.6.0
+PyQt6-WebEngine>=6.6.0
+natsort>=8.4.0
+streamlink>=6.7.0
+yt-dlp>=2024.0.0

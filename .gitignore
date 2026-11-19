@@ -1,10 +1,15 @@
 ﻿dist/
 dist_v2/
 build/
-*.spec
 web_profile/
 streamers.json
 layouts.json
+settings.json
+my_streamers_backup.json
+my_layouts_backup.json
+Backup/
+.vscode/
+.env
 *.bak
 *.tmp
 __pycache__/
