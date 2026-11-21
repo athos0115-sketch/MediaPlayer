@@ -941,6 +941,34 @@ class UnifiedMediaPlayer(QMainWindow):
             self._connect_live_chat(self.current_web_url, self.current_chat_url)
             self.show_osd("🔄 로그인 세션이 채팅창에 반영되었습니다.", duration=2500)
 
+    def _on_login_web_url_changed(self, qurl: QUrl):
+        """로그인 서랍에서 인증 완료 후 메인 도메인으로 이동하면 접기 전이라도 채팅창을 자동 갱신"""
+        if not self.login_drawer_container.isVisible() or not self.current_chat_url:
+            return
+        host = (qurl.host() or "").lower()
+        path = (qurl.path() or "").lower()
+        if not host:
+            return
+        if host.startswith(("login.", "nid.", "accounts.")):
+            return
+        completed = (
+            ("sooplive." in host and not path.startswith("/login"))
+            or host == "chzzk.naver.com"
+            or host == "www.naver.com"
+            or "youtube.com" in host
+        )
+        if completed:
+            if not hasattr(self, "_login_chat_reload_timer"):
+                self._login_chat_reload_timer = QTimer(self)
+                self._login_chat_reload_timer.setSingleShot(True)
+                self._login_chat_reload_timer.timeout.connect(self._reload_chat_after_login)
+            self._login_chat_reload_timer.start(450)
+
+    def _reload_chat_after_login(self):
+        if self.current_chat_url:
+            self._connect_live_chat(self.current_web_url, self.current_chat_url)
+            self.show_osd("🔑 로그인 완료 감지: 채팅창을 새로고침했습니다.", duration=2200)
+
     def _update_login_bar_styles(self):
         active_qss = (
             "QPushButton { background-color: #00e5ff; color: #000000; "
@@ -1248,6 +1276,7 @@ class UnifiedMediaPlayer(QMainWindow):
         self.login_web_view = QWebEngineView(self.login_drawer_container)
         self.login_web_view.setPage(PopupSupportWebPage(self.web_profile, self.login_web_view))
         self.login_web_view.page().setBackgroundColor(QColor("#16161d"))
+        self.login_web_view.urlChanged.connect(self._on_login_web_url_changed)
         ld_layout.addWidget(self.login_web_view)
         self.login_drawer_container.hide()
         chat_body_layout.addWidget(self.login_drawer_container)

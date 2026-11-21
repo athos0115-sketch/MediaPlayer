@@ -288,6 +288,57 @@ SOOP_CHAT_DOM_MASK_JS = """
                 lp.__chatConnectTriggered = true;
                 lp.connectChat().catch(function() { lp.__chatConnectTriggered = false; });
             }
+
+            // 로그인 상태인데 숨겨진 백그라운드 플레이어의 프리롤 광고 대기로 채팅 입력/전송이 잠긴 경우 해제
+            const isLoggedIn = document.cookie.includes('UserTicket=');
+            if (isLoggedIn) {
+                const ac = window.liveView && window.liveView.aContainer;
+                const cc = ac
+                    ? Object.values(ac).find(v => v && typeof v.sendChatMessage === 'function')
+                    : null;
+                const cw = document.getElementById('chat_write');
+                const wa = document.getElementById('write_area');
+                const ec = document.getElementById('empty_chat');
+                const ecText = ec ? (ec.textContent || '').trim() : '';
+                const isAdBlocked = Boolean(
+                    (cc && (cc.bBeforeBroadingChatBlock || cc.bPreRollNotice))
+                    || (cw && cw.classList.contains('blocked'))
+                    || ecText.includes('광고')
+                );
+                if (isAdBlocked) {
+                    try {
+                        if (cc && typeof cc.releaseChatBlockBeforeBroading === 'function') {
+                            cc.releaseChatBlockBeforeBroading();
+                        }
+                        if (cc && typeof cc.broading === 'function') {
+                            cc.broading();
+                        }
+                    } catch (e) {}
+                    if (cw) cw.classList.remove('blocked');
+                    if (wa && wa.getAttribute('contenteditable') !== 'true') {
+                        wa.setAttribute('contenteditable', 'true');
+                        wa.contentEditable = 'true';
+                    }
+                    if (ec && ecText.includes('광고')) {
+                        ec.textContent = '채팅 입력(c)';
+                    }
+                }
+                const sockOpen = Boolean(
+                    lp.chatSocket && lp.chatSocket.socket && lp.chatSocket.socket.readyState === 1
+                );
+                if (lp.chatSocket && lp.chatSocket.isConnected && lp.chatSocket._isChannelJoined && lp.chatSocket.bWaitJoinComplete) {
+                    lp.chatSocket.bWaitJoinComplete = false;
+                }
+                if (cc && cc.isBroadAndChatEnded && !cc.isBroadEndAndChatClose && sockOpen && !cc.__mpEndedPatched) {
+                    try {
+                        Object.defineProperty(cc, 'isBroadAndChatEnded', {
+                            get: function() { return Boolean(cc.isBroadEndAndChatClose); },
+                            configurable: true
+                        });
+                        cc.__mpEndedPatched = true;
+                    } catch (e) {}
+                }
+            }
         } catch (e) {}
     }
 
