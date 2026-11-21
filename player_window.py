@@ -265,6 +265,41 @@ class UnifiedMediaPlayer(QMainWindow):
         except Exception as e:
             print(f"[Win32 스타일 적용 참고] {e}")
 
+    def _all_overlay_windows(self):
+        return [
+            w for w in (
+                getattr(self, "control_bar", None),
+                getattr(self, "osd_window", None),
+                getattr(self, "jump_input", None),
+                getattr(self, "interval_input", None),
+                getattr(self, "url_input", None),
+            )
+            if w is not None
+        ]
+
+    def _sync_overlay_zorder_native(self, overlay_widget):
+        """소유 Tool 오버레이 창이 항상 위 상태와 일치하도록 Win32 Z-order를 동기화합니다."""
+        if not overlay_widget or not overlay_widget.isWindow():
+            return
+        if HAS_WIN32:
+            try:
+                hwnd = int(overlay_widget.winId())
+                HWND_TOPMOST = -1
+                HWND_NOTOPMOST = -2
+                SWP_NOMOVE = 0x0002
+                SWP_NOSIZE = 0x0001
+                SWP_NOACTIVATE = 0x0010
+                user32 = ctypes.windll.user32
+                user32.SetWindowPos.argtypes = [
+                    wintypes.HWND, wintypes.HWND,
+                    ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint
+                ]
+                user32.SetWindowPos.restype = wintypes.BOOL
+                insert_after = HWND_TOPMOST if self.is_always_on_top else HWND_NOTOPMOST
+                user32.SetWindowPos(hwnd, insert_after, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
+            except Exception:
+                pass
+
     def _apply_always_on_top_native(self):
         if HAS_WIN32:
             try:
@@ -282,6 +317,9 @@ class UnifiedMediaPlayer(QMainWindow):
                 user32.SetWindowPos.restype = wintypes.BOOL
                 insert_after = HWND_TOPMOST if self.is_always_on_top else HWND_NOTOPMOST
                 user32.SetWindowPos(hwnd, insert_after, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
+                for ov in self._all_overlay_windows():
+                    if ov.isVisible():
+                        self._sync_overlay_zorder_native(ov)
                 return
             except Exception as e:
                 print(f"[Win32 항상 위 적용 참고] {e}")
@@ -1320,10 +1358,20 @@ class UnifiedMediaPlayer(QMainWindow):
 
     def _init_top_level_overlays(self):
         """
-        재생바(control_bar), OSD, 입력 팝업을 플레이어 창(self) 내부 자식 오버레이 위젯으로 구성하여
-        영상/웹뷰보다는 앞에, 플레이어보다 앞에 있는 외부 창에는 뚫고 나오지 않도록 보장합니다.
+        재생바(control_bar), OSD, 입력 팝업을 WindowStaysOnTopHint 없는 소유(Owned) Tool 창으로 구성하여
+        QVideoWidget/QWebEngineView 네이티브 영상 표면 위에는 선명하게 그려지면서도,
+        플레이어보다 앞에 있는 외부 창은 절대 뚫고 나오지 않도록 보장합니다.
         """
-        self.osd_window = QWidget(self)
+        overlay_flags = Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
+        osd_flags = (
+            overlay_flags
+            | Qt.WindowType.WindowTransparentForInput
+            | Qt.WindowType.WindowDoesNotAcceptFocus
+        )
+
+        self.osd_window = QWidget(self, osd_flags)
+        self.osd_window.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.osd_window.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.osd_window.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.osd_window.setStyleSheet("background: transparent; border: none;")
         osd_layout = QVBoxLayout(self.osd_window)
@@ -1360,6 +1408,7 @@ class UnifiedMediaPlayer(QMainWindow):
         """
 
         self.jump_input = QLineEdit(self)
+        self.jump_input.setWindowFlags(overlay_flags)
         self.jump_input.setPlaceholderText("탐색 단위(초) 입력 (예: 89, 30) 후 Enter")
         self.jump_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.jump_input.setFixedSize(380, 48)
@@ -1369,6 +1418,7 @@ class UnifiedMediaPlayer(QMainWindow):
         self.jump_input.hide()
 
         self.interval_input = QLineEdit(self)
+        self.interval_input.setWindowFlags(overlay_flags)
         self.interval_input.setPlaceholderText("이미지 자동 넘김 시간(초) 입력 (예: 5, 3.5) 후 Enter")
         self.interval_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.interval_input.setFixedSize(420, 48)
@@ -1378,6 +1428,7 @@ class UnifiedMediaPlayer(QMainWindow):
         self.interval_input.hide()
 
         self.url_input = QLineEdit(self)
+        self.url_input.setWindowFlags(overlay_flags)
         self.url_input.setPlaceholderText("라이브/유튜브 URL 입력 (예: play.sooplive.com/... 또는 chzzk...) 후 Enter")
         self.url_input.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.url_input.setFixedSize(580, 48)
@@ -1386,7 +1437,9 @@ class UnifiedMediaPlayer(QMainWindow):
         self.url_input.installEventFilter(self)
         self.url_input.hide()
 
-        self.control_bar = QWidget(self)
+        self.control_bar = QWidget(self, overlay_flags)
+        self.control_bar.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.control_bar.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.control_bar.setStyleSheet("background: transparent; border: none;")
         self.control_bar.setFixedHeight(58)
 
@@ -1699,7 +1752,7 @@ class UnifiedMediaPlayer(QMainWindow):
         self.setGeometry(g)
 
     def _is_cursor_over_this_window(self, cursor_global: QPoint) -> bool:
-        """마우스 포인터 위치의 최상단 창이 현재 플레이어 창(또는 소속 패널)인지 판별"""
+        """마우스 포인터 위치의 최상단 창이 현재 플레이어 창(또는 소속 패널·오버레이)인지 판별"""
         if HAS_WIN32:
             try:
                 user32 = ctypes.windll.user32
@@ -1712,11 +1765,18 @@ class UnifiedMediaPlayer(QMainWindow):
                 for panel in self._all_managed_panels():
                     if panel and panel.isVisible() and panel.isWindow():
                         allowed_hwnds.add(int(panel.winId()))
+                for ov in self._all_overlay_windows():
+                    if ov and ov.isVisible() and ov.isWindow():
+                        allowed_hwnds.add(int(ov.winId()))
                 return root_hwnd in allowed_hwnds
             except Exception:
                 pass
         top_w = QApplication.topLevelAt(cursor_global)
-        return top_w is self or top_w in self._all_managed_panels()
+        return (
+            top_w is self
+            or top_w in self._all_managed_panels()
+            or top_w in self._all_overlay_windows()
+        )
 
     def _poll_mouse_state(self):
         if not self._ui_initialized or not self.isVisible() or self.isMinimized():
@@ -1768,7 +1828,7 @@ class UnifiedMediaPlayer(QMainWindow):
                     if not self.control_bar.isVisible():
                         self._reposition_control_bar()
                         self.control_bar.show()
-                    self.control_bar.raise_()
+                        self._sync_overlay_zorder_native(self.control_bar)
                     return
 
         if not self.is_slider_dragging and self.control_bar.isVisible():
@@ -1782,7 +1842,7 @@ class UnifiedMediaPlayer(QMainWindow):
     def _reposition_control_bar(self):
         if not self.control_bar or not self._ui_initialized:
             return
-        video_local_tl = self.stack.mapTo(self, QPoint(0, 0))
+        video_global_tl = self.stack.mapToGlobal(QPoint(0, 0))
         vw = self.stack.width()
         vh = self.stack.height()
 
@@ -1795,12 +1855,11 @@ class UnifiedMediaPlayer(QMainWindow):
         self.btn_streamer_toggle.setText("⭐" if compact else "⭐방송")
         self.btn_plist_toggle.setText("📋" if compact else "📋목록")
 
-        bar_x = video_local_tl.x() + (vw - bar_w) // 2
-        bar_y = video_local_tl.y() + vh - self.control_bar.height() - 22
+        bar_x = video_global_tl.x() + (vw - bar_w) // 2
+        bar_y = video_global_tl.y() + vh - self.control_bar.height() - 22
 
         self.control_bar.setFixedWidth(bar_w)
         self.control_bar.move(bar_x, bar_y)
-        self.control_bar.raise_()
 
     def _sync_attached_bottom_panels(self):
         if not self._ui_initialized:
@@ -2173,9 +2232,9 @@ class UnifiedMediaPlayer(QMainWindow):
         self.osd_label.adjustSize()
         self.osd_window.adjustSize()
 
-        self.osd_window.move(24, 24)
+        self.osd_window.move(self.mapToGlobal(QPoint(24, 24)))
         self.osd_window.show()
-        self.osd_window.raise_()
+        self._sync_overlay_zorder_native(self.osd_window)
         self.osd_timer.start(duration)
 
     def _sync_title_and_tray(self, display_name: str):
@@ -2206,12 +2265,12 @@ class UnifiedMediaPlayer(QMainWindow):
             (self.width() - self.url_input.width()) // 2,
             (self.height() - self.url_input.height()) // 2
         )
-        self.url_input.move(local_center)
+        self.url_input.move(self.mapToGlobal(local_center))
         self.url_input.setText(self.current_web_url)
         self.url_input.selectAll()
         self.url_input.show()
-        self.url_input.raise_()
-        self.activateWindow()
+        self._sync_overlay_zorder_native(self.url_input)
+        self.url_input.activateWindow()
         self.url_input.setFocus()
 
     def open_jump_popup(self):
@@ -2220,12 +2279,12 @@ class UnifiedMediaPlayer(QMainWindow):
             (self.width() - self.jump_input.width()) // 2,
             (self.height() - self.jump_input.height()) // 2
         )
-        self.jump_input.move(local_center)
+        self.jump_input.move(self.mapToGlobal(local_center))
         self.jump_input.setText(self._get_custom_seek_str())
         self.jump_input.selectAll()
         self.jump_input.show()
-        self.jump_input.raise_()
-        self.activateWindow()
+        self._sync_overlay_zorder_native(self.jump_input)
+        self.jump_input.activateWindow()
         self.jump_input.setFocus()
 
     def _execute_custom_jump(self):
@@ -2257,12 +2316,12 @@ class UnifiedMediaPlayer(QMainWindow):
             (self.width() - self.interval_input.width()) // 2,
             (self.height() - self.interval_input.height()) // 2
         )
-        self.interval_input.move(local_center)
+        self.interval_input.move(self.mapToGlobal(local_center))
         self.interval_input.setText(self._get_interval_sec_str())
         self.interval_input.selectAll()
         self.interval_input.show()
-        self.interval_input.raise_()
-        self.activateWindow()
+        self._sync_overlay_zorder_native(self.interval_input)
+        self.interval_input.activateWindow()
         self.interval_input.setFocus()
 
     def _execute_slideshow_interval(self):
@@ -2935,6 +2994,10 @@ class UnifiedMediaPlayer(QMainWindow):
         super().moveEvent(event)
         if not self._ui_initialized:
             return
+        if self.control_bar and self.control_bar.isVisible():
+            self._reposition_control_bar()
+        if self.osd_window and self.osd_window.isVisible():
+            self.osd_window.move(self.mapToGlobal(QPoint(24, 24)))
         self._sync_attached_bottom_panels()
 
     def resizeEvent(self, event):
@@ -2944,6 +3007,8 @@ class UnifiedMediaPlayer(QMainWindow):
         self.image_view.refresh_scale_on_resize()
         if self.control_bar and self.control_bar.isVisible():
             self._reposition_control_bar()
+        if self.osd_window and self.osd_window.isVisible():
+            self.osd_window.move(self.mapToGlobal(QPoint(24, 24)))
         self._sync_attached_bottom_panels()
 
     def _restore_from_tray(self):
